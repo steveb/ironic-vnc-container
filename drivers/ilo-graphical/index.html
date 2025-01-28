@@ -1,0 +1,33 @@
+<html>
+    <head>
+        <title>iLO login console redirect</title>
+    </head>
+
+    <body>
+        Hi
+        <script>
+function reqListener() {
+  console.log(this.responseText);
+}
+
+const req = new XMLHttpRequest();
+
+let authUrl = 'https://10.6.49.26/redfish/v1/Sessions/'
+
+let consoleUrl = 'https://10.6.49.26/irc.html'
+let fd = new FormData()
+fd.append('UserName', 'Administrator')
+fd.append('Password', 'password')
+
+let xhr = new XMLHttpRequest();
+xhr.addEventListener("load", reqListener);
+xhr.withCredentials = true;
+
+xhr.open('POST', authUrl);
+// xhr.setRequestHeader('Origin', 'https://10.6.49.26')
+xhr.setRequestHeader('Access-Control-Allow-Origin', '*')
+xhr.send(fd)
+
+        </script>
+    </body>
+</html>
