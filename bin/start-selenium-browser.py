@@ -29,7 +29,6 @@ def do_ilo(browser):
     _disable_right_click(browser)
     # full screen content is shown in an embedded iframe
     iframe = browser.find_element(By.ID, "appFrame")
-
     browser.switch_to.frame(iframe)
 
     # wait for the username field to be enabled then perform login
@@ -53,6 +52,58 @@ def do_ilo(browser):
     browser.get(console_url)
 
     _disable_right_click(browser)
+
+def do_supermicro(browser):
+    url = os.environ.get('BMC_URL')
+    username = os.environ.get('BMC_USERNAME')
+    password = os.environ.get('BMC_PASSWORD')
+    console_url = f'{url}cgi/url_redirect.cgi?url_name=man_ikvm_html5_bootstrap'
+
+    # populate login and submit
+    browser.find_element(By.NAME, value="name").send_keys(username)
+    browser.find_element(By.ID, value="pwd").send_keys(password)
+    browser.find_element(By.ID, value="login_word").click()
+
+    # navigate down some iframes
+    iframe = browser.find_element(By.ID, "TOPMENU")
+    browser.switch_to.frame(iframe)
+
+    iframe = browser.find_element(By.ID, "frame_main")
+    browser.switch_to.frame(iframe)
+
+
+    wait = WebDriverWait(
+        browser, timeout=30, poll_frequency=.2,
+        ignored_exceptions=[exceptions.NoSuchElementException,
+                            exceptions.ElementNotInteractableException])
+    wait.until(lambda d : browser.find_element(By.ID, value="img1") or True)
+
+    # launch the console by waiting for the console preview image to be
+    # loaded and clickable
+    def snapshot_wait(d):
+        try:
+            img1 = browser.find_element(By.ID, value="img1")
+        except exceptions.NoSuchElementException as e:
+            print("img1 doesn't exist yet")
+            return False
+
+        if 'Snapshot' not in img1.get_attribute('src'):
+            print("img1 src not a console snapshot yet")
+            return False
+        if not img1.get_attribute('complete') == 'true':
+            print("img1 console snapshot not loaded yet")
+            return False
+        try:
+            img1.click()
+        except exceptions.ElementNotInteractableException as e:
+            print("img1 not clickable yet")
+            return False
+        return True
+
+    wait = WebDriverWait(browser, timeout=30, poll_frequency=1)
+    wait.until(snapshot_wait)
+
+    # _disable_right_click(browser)
 
 
 
@@ -95,11 +146,13 @@ def start_browser(url=None):
 
 driver_entrypoints = {
     'fake': do_fake,
-    'ilo-graphical': do_ilo
+    'ilo-graphical': do_ilo,
+    'supermicro-graphical': do_supermicro
 }
 driver_urls = {
     'fake': 'file:///drivers/fake/index.html',
-    'ilo-graphical': os.environ.get('BMC_URL')
+    'ilo-graphical': os.environ.get('BMC_URL'),
+    'supermicro-graphical': os.environ.get('BMC_URL')
 }
 
 def main():
