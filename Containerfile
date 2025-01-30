@@ -6,7 +6,6 @@ RUN dnf -y install \
     chromium \
     chromedriver \
     procps \
-    python3-requests \
     python3-selenium \
     x11vnc \
     xorg-x11-server-Xvfb
@@ -14,7 +13,7 @@ RUN dnf -y install \
 ENV DISPLAY_WIDTH=1280
 ENV DISPLAY_HEIGHT=960
 
-ENV DRIVER='fake'
+ENV APP='fake'
 
 ADD bin/* /usr/local/bin
 ADD drivers /drivers

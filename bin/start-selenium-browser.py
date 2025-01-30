@@ -6,109 +6,127 @@ import sys
 import time
 from urllib import parse as urlparse
 
-import requests
 from selenium import webdriver
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 from selenium.common import exceptions
 
-def do_fake(browser):
-    pass
+class BaseApp:
 
-def _disable_right_click(browser):
-    # disable right-click menu
-    browser.execute_script('window.addEventListener("contextmenu", function(e) { e.preventDefault(); })')
+    @property
+    def url(self):
+        pass
 
-def do_ilo(browser):
-    url = os.environ.get('BMC_URL')
-    username = os.environ.get('BMC_USERNAME')
-    password = os.environ.get('BMC_PASSWORD')
-    console_url = f'{url}irc.html'
+    def start(self, driver):
+        pass
 
-    _disable_right_click(browser)
-    # full screen content is shown in an embedded iframe
-    iframe = browser.find_element(By.ID, "appFrame")
-    browser.switch_to.frame(iframe)
+class FakeApp(BaseApp):
 
-    # wait for the username field to be enabled then perform login
-    username_field = browser.find_element(By.ID, value="username")
-    wait = WebDriverWait(
-        browser, timeout=5, poll_frequency=.2,
-        ignored_exceptions=[exceptions.ElementNotInteractableException])
-    wait.until(lambda d : username_field.send_keys(username) or True)
+    @property
+    def url(self):
+        return 'file:///drivers/fake/index.html'
 
-    browser.find_element(By.ID, value="password").send_keys(password)
-    browser.find_element(By.ID, value="login-form__submit").click()
+class BMCApp(BaseApp):
 
-    # wait for <body id="app-container"> to exist, which indicates
-    # the login form has submitted and session cookies are now set
-    wait = WebDriverWait(
-        browser, timeout=10, poll_frequency=.2,
-        ignored_exceptions=[exceptions.NoSuchElementException])
-    wait.until(lambda d : browser.find_element(By.ID, value="app-container") or True)
+    @property
+    def url(self):
+        return os.environ.get('BMC_URL')
 
-    # load the actual console
-    browser.get(console_url)
+    def disable_right_click(self, driver):
+        # disable right-click menu
+        driver.execute_script('window.addEventListener("contextmenu", function(e) { e.preventDefault(); })')
 
-    _disable_right_click(browser)
+class IloApp(BMCApp):
 
-def do_supermicro(browser):
-    url = os.environ.get('BMC_URL')
-    username = os.environ.get('BMC_USERNAME')
-    password = os.environ.get('BMC_PASSWORD')
-    console_url = f'{url}cgi/url_redirect.cgi?url_name=man_ikvm_html5_bootstrap'
+    def start(self, driver):
+        url = self.url
+        username = os.environ.get('BMC_USERNAME')
+        password = os.environ.get('BMC_PASSWORD')
+        console_url = f'{url}irc.html'
 
-    # populate login and submit
-    browser.find_element(By.NAME, value="name").send_keys(username)
-    browser.find_element(By.ID, value="pwd").send_keys(password)
-    browser.find_element(By.ID, value="login_word").click()
+        self.disable_right_click(driver)
+        # full screen content is shown in an embedded iframe
+        iframe = driver.find_element(By.ID, "appFrame")
+        driver.switch_to.frame(iframe)
 
-    # navigate down some iframes
-    iframe = browser.find_element(By.ID, "TOPMENU")
-    browser.switch_to.frame(iframe)
+        # wait for the username field to be enabled then perform login
+        username_field = driver.find_element(By.ID, value="username")
+        wait = WebDriverWait(
+            driver, timeout=5, poll_frequency=.2,
+            ignored_exceptions=[exceptions.ElementNotInteractableException])
+        wait.until(lambda d : username_field.send_keys(username) or True)
 
-    iframe = browser.find_element(By.ID, "frame_main")
-    browser.switch_to.frame(iframe)
+        driver.find_element(By.ID, value="password").send_keys(password)
+        driver.find_element(By.ID, value="login-form__submit").click()
 
+        # wait for <body id="app-container"> to exist, which indicates
+        # the login form has submitted and session cookies are now set
+        wait = WebDriverWait(
+            driver, timeout=10, poll_frequency=.2,
+            ignored_exceptions=[exceptions.NoSuchElementException])
+        wait.until(lambda d : driver.find_element(By.ID, value="app-container") or True)
 
-    wait = WebDriverWait(
-        browser, timeout=30, poll_frequency=.2,
-        ignored_exceptions=[exceptions.NoSuchElementException,
-                            exceptions.ElementNotInteractableException])
-    wait.until(lambda d : browser.find_element(By.ID, value="img1") or True)
+        # load the actual console
+        driver.get(console_url)
 
-    # launch the console by waiting for the console preview image to be
-    # loaded and clickable
-    def snapshot_wait(d):
-        try:
-            img1 = browser.find_element(By.ID, value="img1")
-        except exceptions.NoSuchElementException as e:
-            print("img1 doesn't exist yet")
-            return False
+        self.disable_right_click(driver)
 
-        if 'Snapshot' not in img1.get_attribute('src'):
-            print("img1 src not a console snapshot yet")
-            return False
-        if not img1.get_attribute('complete') == 'true':
-            print("img1 console snapshot not loaded yet")
-            return False
-        try:
-            img1.click()
-        except exceptions.ElementNotInteractableException as e:
-            print("img1 not clickable yet")
-            return False
-        return True
+class SupermicroApp(BMCApp):
 
-    wait = WebDriverWait(browser, timeout=30, poll_frequency=1)
-    wait.until(snapshot_wait)
+    def start(self, driver):
+        username = os.environ.get('BMC_USERNAME')
+        password = os.environ.get('BMC_PASSWORD')
 
-    # _disable_right_click(browser)
+        # populate login and submit
+        driver.find_element(By.NAME, value="name").send_keys(username)
+        driver.find_element(By.ID, value="pwd").send_keys(password)
+        driver.find_element(By.ID, value="login_word").click()
+
+        # navigate down some iframes
+        iframe = driver.find_element(By.ID, "TOPMENU")
+        driver.switch_to.frame(iframe)
+
+        iframe = driver.find_element(By.ID, "frame_main")
+        driver.switch_to.frame(iframe)
 
 
+        wait = WebDriverWait(
+            driver, timeout=30, poll_frequency=.2,
+            ignored_exceptions=[exceptions.NoSuchElementException,
+                                exceptions.ElementNotInteractableException])
+        wait.until(lambda d : driver.find_element(By.ID, value="img1") or True)
+
+        # launch the console by waiting for the console preview image to be
+        # loaded and clickable
+        def snapshot_wait(d):
+            try:
+                img1 = driver.find_element(By.ID, value="img1")
+            except exceptions.NoSuchElementException as e:
+                print("img1 doesn't exist yet")
+                return False
+
+            if 'Snapshot' not in img1.get_attribute('src'):
+                print("img1 src not a console snapshot yet")
+                return False
+            if not img1.get_attribute('complete') == 'true':
+                print("img1 console snapshot not loaded yet")
+                return False
+            try:
+                img1.click()
+            except exceptions.ElementNotInteractableException as e:
+                print("img1 not clickable yet")
+                return False
+            return True
+
+        wait = WebDriverWait(driver, timeout=30, poll_frequency=1)
+        wait.until(snapshot_wait)
+
+        # self.disable_right_click(driver)
 
 
-def start_browser(url=None):
+def start_driver(url=None):
+    print(f'starting app with url {url}')
     opts = webdriver.ChromeOptions()
     opts.binary_location = '/usr/bin/chromium-browser'
     # opts.enable_bidi = True
@@ -144,28 +162,27 @@ def start_browser(url=None):
 
     return driver
 
-driver_entrypoints = {
-    'fake': do_fake,
-    'ilo-graphical': do_ilo,
-    'supermicro-graphical': do_supermicro
-}
-driver_urls = {
-    'fake': 'file:///drivers/fake/index.html',
-    'ilo-graphical': os.environ.get('BMC_URL'),
-    'supermicro-graphical': os.environ.get('BMC_URL')
+app_classes = {
+    'fake': FakeApp,
+    'ilo-graphical': IloApp,
+    'supermicro-graphical': SupermicroApp,
 }
 
 def main():
-    driver_name = os.environ.get('DRIVER')
-    browser = start_browser(driver_urls.get(driver_name))
-    print(f'got browser {browser}')
-    driver_func = driver_entrypoints.get(driver_name)
-    if driver_func:
-        print(f'Running driver {driver_name}')
-        driver_func(browser)
-        while True:
-            time.sleep(10)
-    print('Exiting')
+    app_name = os.environ.get('APP')
+    app_class = app_classes.get(app_name)
+    if not app_class:
+        raise Exception(f'Unknown app {app_name}')
+
+    app = app_class()
+
+    driver = start_driver(url=app.url)
+    print(f'got driver {driver}')
+
+    print(f'Running app {app_name}')
+    app.start(driver)
+    while True:
+        time.sleep(10)
 
 if __name__ == '__main__':
     sys.exit(main())
