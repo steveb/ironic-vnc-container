@@ -39,17 +39,17 @@ class BMCApp(BaseApp):
 
 class IloApp(BMCApp):
 
-    def start(self, driver):
-        url = self.url
+    @property
+    def url(self):
+        return self.base_url + 'irc.html'
+
+    @property
+    def base_url(self):
+        return os.environ.get('BMC_URL')
+
+    def login(self, driver):
         username = os.environ.get('BMC_USERNAME')
         password = os.environ.get('BMC_PASSWORD')
-        console_url = f'{url}irc.html'
-
-        self.disable_right_click(driver)
-        # full screen content is shown in an embedded iframe
-        iframe = driver.find_element(By.ID, "appFrame")
-        driver.switch_to.frame(iframe)
-
         # wait for the username field to be enabled then perform login
         username_field = driver.find_element(By.ID, value="username")
         wait = WebDriverWait(
@@ -60,6 +60,32 @@ class IloApp(BMCApp):
         driver.find_element(By.ID, value="password").send_keys(password)
         driver.find_element(By.ID, value="login-form__submit").click()
 
+    def start(self, driver):
+
+        # Detect iLO 6 vs 5 based on whether a message box or a login form
+        # is presented
+        try:
+            driver.find_element(By.CLASS_NAME, value="loginBoxRestrictWidth")
+            is_ilo6 = True
+        except exceptions.NoSuchElementException:
+            is_ilo6 = False
+
+        if is_ilo6:
+            # iLO 6 has an inline login which matches the main login
+            self.login(driver)
+            self.disable_right_click(driver)
+            self.full_screen(driver)
+            return
+
+        # load the main login page
+        driver.get(self.base_url)
+
+        # full screen content is shown in an embedded iframe
+        iframe = driver.find_element(By.ID, "appFrame")
+        driver.switch_to.frame(iframe)
+
+        self.login(driver)
+
         # wait for <body id="app-container"> to exist, which indicates
         # the login form has submitted and session cookies are now set
         wait = WebDriverWait(
@@ -68,9 +94,20 @@ class IloApp(BMCApp):
         wait.until(lambda d : driver.find_element(By.ID, value="app-container") or True)
 
         # load the actual console
-        driver.get(console_url)
-
+        driver.get(self.url)
         self.disable_right_click(driver)
+        self.full_screen(driver)
+
+
+    def full_screen(self, driver):
+        # make console full screen to hide menu
+        fs_button = driver.find_element(By.CLASS_NAME, value="btnVideoFullScreen")
+        wait = WebDriverWait(
+            driver, timeout=20, poll_frequency=.2,
+            ignored_exceptions=[exceptions.ElementNotInteractableException,
+                                exceptions.ElementClickInterceptedException])
+        wait.until(lambda d : fs_button.click() or True)
+
 
 class SupermicroApp(BMCApp):
 
