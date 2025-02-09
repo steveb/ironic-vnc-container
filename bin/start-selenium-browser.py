@@ -37,6 +37,54 @@ class BMCApp(BaseApp):
         # disable right-click menu
         driver.execute_script('window.addEventListener("contextmenu", function(e) { e.preventDefault(); })')
 
+class IdracApp(BMCApp):
+
+    @property
+    def url(self):
+        return self.base_url + 'console'
+
+    @property
+    def base_url(self):
+        return os.environ.get('BMC_URL')
+
+    def start(self, driver):
+        original_window = driver.current_window_handle
+        username = os.environ.get('BMC_USERNAME')
+        password = os.environ.get('BMC_PASSWORD')
+        wait = WebDriverWait(
+            driver, timeout=5, poll_frequency=.2,
+            ignored_exceptions=[exceptions.NoSuchElementException,
+                                exceptions.ElementNotInteractableException])
+        wait.until(lambda d : driver.find_element(
+            By.CLASS_NAME, value="cui-start-screen-username").send_keys(username) or True)
+
+        driver.find_element(By.CLASS_NAME, value="cui-start-screen-password").send_keys(password)
+        login_button = driver.find_element(By.CLASS_NAME, value="cux-button")
+
+        wait = WebDriverWait(
+            driver, timeout=5, poll_frequency=.2,
+            ignored_exceptions=[exceptions.ElementClickInterceptedException])
+        wait.until(lambda d : login_button.click() or True)
+
+        # Wait for the new window or tab
+        wait = WebDriverWait(
+            driver, timeout=10, poll_frequency=.2)
+        wait.until(EC.number_of_windows_to_be(2))
+        # Loop through until we find a new window handle
+        for window_handle in driver.window_handles:
+            if window_handle != original_window:
+                driver.switch_to.window(window_handle)
+                break
+
+        # wait for the full screen button
+        wait = WebDriverWait(
+            driver, timeout=10, poll_frequency=.2,
+            ignored_exceptions=[exceptions.NoSuchElementException])
+        wait.until(lambda d : driver.find_element(By.TAG_NAME, value="full-screen") or True)
+        fs_tag = driver.find_element(By.TAG_NAME, value="full-screen")
+        fs_tag.find_element(By.TAG_NAME, "button").click()
+
+
 class IloApp(BMCApp):
 
     @property
@@ -48,9 +96,15 @@ class IloApp(BMCApp):
         return os.environ.get('BMC_URL')
 
     def login(self, driver):
+
         username = os.environ.get('BMC_USERNAME')
         password = os.environ.get('BMC_PASSWORD')
         # wait for the username field to be enabled then perform login
+        wait = WebDriverWait(
+            driver, timeout=10, poll_frequency=.2,
+            ignored_exceptions=[exceptions.NoSuchElementException])
+        wait.until(lambda d : driver.find_element(By.ID, value="username") or True)
+
         username_field = driver.find_element(By.ID, value="username")
         wait = WebDriverWait(
             driver, timeout=5, poll_frequency=.2,
@@ -201,6 +255,7 @@ def start_driver(url=None):
 
 app_classes = {
     'fake': FakeApp,
+    'idrac-graphical': IdracApp,
     'ilo-graphical': IloApp,
     'supermicro-graphical': SupermicroApp,
 }
