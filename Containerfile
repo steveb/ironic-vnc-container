@@ -6,6 +6,7 @@ RUN dnf -y install \
     chromium \
     chromedriver \
     procps \
+    python3-requests \
     python3-selenium \
     x11vnc \
     xorg-x11-server-Xvfb

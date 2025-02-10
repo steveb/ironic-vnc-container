@@ -2,6 +2,8 @@
 
 import json
 import os
+import requests
+from requests import auth
 import sys
 import time
 from urllib import parse as urlparse
@@ -41,41 +43,25 @@ class IdracApp(BMCApp):
 
     @property
     def url(self):
-        return self.base_url + 'console'
+        username = os.environ.get('BMC_USERNAME')
+        password = os.environ.get('BMC_PASSWORD')
+        verify = os.environ.get('BMC_VERIFY', 'true').lower() == 'true'
+        kvm_session_url = self.base_url + 'redfish/v1/Managers/iDRAC.Embedded.1/Oem/Dell/DelliDRACCardService/Actions/DelliDRACCardService.GetKVMSession'
+        netloc = urlparse.urlparse(self.base_url).netloc
+
+        r = requests.post(kvm_session_url, verify=verify, auth=auth.HTTPBasicAuth(username, password),
+                          json={"SessionTypeName": "idrac-graphical"}).json()
+        temp_username = r['TempUsername']
+        temp_password = r['TempPassword']
+        url = f"{self.base_url}restgui/vconsole/index.html?ip={netloc}&kvmport=443&title=idrac-graphical&VCSID={temp_username}&VCSID2={temp_password}"
+        return url
+
 
     @property
     def base_url(self):
         return os.environ.get('BMC_URL')
 
     def start(self, driver):
-        original_window = driver.current_window_handle
-        username = os.environ.get('BMC_USERNAME')
-        password = os.environ.get('BMC_PASSWORD')
-        wait = WebDriverWait(
-            driver, timeout=5, poll_frequency=.2,
-            ignored_exceptions=[exceptions.NoSuchElementException,
-                                exceptions.ElementNotInteractableException])
-        wait.until(lambda d : driver.find_element(
-            By.CLASS_NAME, value="cui-start-screen-username").send_keys(username) or True)
-
-        driver.find_element(By.CLASS_NAME, value="cui-start-screen-password").send_keys(password)
-        login_button = driver.find_element(By.CLASS_NAME, value="cux-button")
-
-        wait = WebDriverWait(
-            driver, timeout=5, poll_frequency=.2,
-            ignored_exceptions=[exceptions.ElementClickInterceptedException])
-        wait.until(lambda d : login_button.click() or True)
-
-        # Wait for the new window or tab
-        wait = WebDriverWait(
-            driver, timeout=10, poll_frequency=.2)
-        wait.until(EC.number_of_windows_to_be(2))
-        # Loop through until we find a new window handle
-        for window_handle in driver.window_handles:
-            if window_handle != original_window:
-                driver.switch_to.window(window_handle)
-                break
-
         # wait for the full screen button
         wait = WebDriverWait(
             driver, timeout=10, poll_frequency=.2,
