@@ -5,6 +5,7 @@ RUN dnf -y install \
     dnf -y install \
     chromium \
     chromedriver \
+    dumb-init \
     procps \
     python3-requests \
     python3-selenium \
@@ -19,4 +20,5 @@ ENV APP='fake'
 ADD bin/* /usr/local/bin
 ADD drivers /drivers
 
-ENTRYPOINT start-xvfb.sh
+ENTRYPOINT ["/usr/bin/dumb-init", "--"]
+CMD ["/usr/local/bin/start-xvfb.sh"]
