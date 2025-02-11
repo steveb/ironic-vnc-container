@@ -7,6 +7,7 @@ RUN dnf -y install \
     chromedriver \
     dumb-init \
     procps \
+    psmisc \
     python3-requests \
     python3-selenium \
     x11vnc \

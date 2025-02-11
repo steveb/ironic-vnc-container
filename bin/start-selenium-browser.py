@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 
-import json
 import os
 import requests
 from requests import auth
+import signal
 import sys
 import time
 from urllib import parse as urlparse
@@ -20,8 +20,14 @@ class BaseApp:
     def url(self):
         pass
 
+    def handle_exit(self, signum, frame):
+        print("got SIGTERM, quitting")
+        self.driver.quit()
+        sys.exit(0)
+
     def start(self, driver):
-        pass
+        self.driver = driver
+        signal.signal(signal.SIGTERM, self.handle_exit)
 
 class FakeApp(BaseApp):
 
@@ -62,6 +68,7 @@ class IdracApp(BMCApp):
         return os.environ.get('BMC_URL')
 
     def start(self, driver):
+        super(IdracApp, self).start(driver)
         # wait for the full screen button
         wait = WebDriverWait(
             driver, timeout=10, poll_frequency=.2,
@@ -101,6 +108,7 @@ class IloApp(BMCApp):
         driver.find_element(By.ID, value="login-form__submit").click()
 
     def start(self, driver):
+        super(IloApp, self).start(driver)
 
         # Detect iLO 6 vs 5 based on whether a message box or a login form
         # is presented
@@ -152,6 +160,7 @@ class IloApp(BMCApp):
 class SupermicroApp(BMCApp):
 
     def start(self, driver):
+        super(SupermicroApp, self).start(driver)
         username = os.environ.get('BMC_USERNAME')
         password = os.environ.get('BMC_PASSWORD')
 
