@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import json
 import os
 import requests
 from requests import auth
@@ -15,6 +16,9 @@ from selenium.webdriver.common.by import By
 from selenium.common import exceptions
 
 class BaseApp:
+
+    def __init__(self, app_info):
+        self.app_info = app_info
 
     @property
     def url(self):
@@ -35,37 +39,36 @@ class FakeApp(BaseApp):
     def url(self):
         return 'file:///drivers/fake/index.html'
 
-class BMCApp(BaseApp):
+class RedfishApp(BaseApp):
 
     @property
-    def url(self):
-        return os.environ.get('BMC_URL')
+    def base_url(self):
+        return self.app_info['address']
+
+    @property
+    def redfish_url(self):
+        return self.base_url + self.app_info.get('root_prefix', '/redfish/v1')
 
     def disable_right_click(self, driver):
         # disable right-click menu
         driver.execute_script('window.addEventListener("contextmenu", function(e) { e.preventDefault(); })')
 
-class IdracApp(BMCApp):
+class IdracApp(RedfishApp):
 
     @property
     def url(self):
-        username = os.environ.get('BMC_USERNAME')
-        password = os.environ.get('BMC_PASSWORD')
-        verify = os.environ.get('BMC_VERIFY', 'true').lower() == 'true'
-        kvm_session_url = self.base_url + 'redfish/v1/Managers/iDRAC.Embedded.1/Oem/Dell/DelliDRACCardService/Actions/DelliDRACCardService.GetKVMSession'
+        username = self.app_info['username']
+        password = self.app_info['password']
+        verify = self.app_info.get('verify_ca', True)
+        kvm_session_url = self.redfish_url + '/Managers/iDRAC.Embedded.1/Oem/Dell/DelliDRACCardService/Actions/DelliDRACCardService.GetKVMSession'
         netloc = urlparse.urlparse(self.base_url).netloc
 
         r = requests.post(kvm_session_url, verify=verify, auth=auth.HTTPBasicAuth(username, password),
                           json={"SessionTypeName": "idrac-graphical"}).json()
         temp_username = r['TempUsername']
         temp_password = r['TempPassword']
-        url = f"{self.base_url}restgui/vconsole/index.html?ip={netloc}&kvmport=443&title=idrac-graphical&VCSID={temp_username}&VCSID2={temp_password}"
+        url = f"{self.base_url}/restgui/vconsole/index.html?ip={netloc}&kvmport=443&title=idrac-graphical&VCSID={temp_username}&VCSID2={temp_password}"
         return url
-
-
-    @property
-    def base_url(self):
-        return os.environ.get('BMC_URL')
 
     def start(self, driver):
         super(IdracApp, self).start(driver)
@@ -78,20 +81,16 @@ class IdracApp(BMCApp):
         fs_tag.find_element(By.TAG_NAME, "button").click()
 
 
-class IloApp(BMCApp):
+class IloApp(RedfishApp):
 
     @property
     def url(self):
-        return self.base_url + 'irc.html'
-
-    @property
-    def base_url(self):
-        return os.environ.get('BMC_URL')
+        return self.base_url + '/irc.html'
 
     def login(self, driver):
 
-        username = os.environ.get('BMC_USERNAME')
-        password = os.environ.get('BMC_PASSWORD')
+        username = self.app_info['username']
+        password = self.app_info['password']
         # wait for the username field to be enabled then perform login
         wait = WebDriverWait(
             driver, timeout=10, poll_frequency=.2,
@@ -157,12 +156,16 @@ class IloApp(BMCApp):
         wait.until(lambda d : fs_button.click() or True)
 
 
-class SupermicroApp(BMCApp):
+class SupermicroApp(RedfishApp):
+
+    @property
+    def url(self):
+        return self.base_url
 
     def start(self, driver):
         super(SupermicroApp, self).start(driver)
-        username = os.environ.get('BMC_USERNAME')
-        password = os.environ.get('BMC_PASSWORD')
+        username = self.app_info['username']
+        password = self.app_info['password']
 
         # populate login and submit
         driver.find_element(By.NAME, value="name").send_keys(username)
@@ -211,7 +214,7 @@ class SupermicroApp(BMCApp):
         # self.disable_right_click(driver)
 
 
-def start_driver(url=None):
+def start_driver(url, app_info):
     print(f'starting app with url {url}')
     opts = webdriver.ChromeOptions()
     opts.binary_location = '/usr/bin/chromium-browser'
@@ -219,7 +222,7 @@ def start_driver(url=None):
     if url:
         opts.add_argument(f"--app={url}")
 
-    verify = os.environ.get('BMC_VERIFY', 'true').lower() == 'true'
+    verify = app_info.get('verify_ca', True)
     if not verify:
         opts.add_argument("--ignore-certificate-errors")
         opts.add_argument("--ignore-ssl-errors")
@@ -248,22 +251,36 @@ def start_driver(url=None):
 
     return driver
 
-app_classes = {
-    'fake': FakeApp,
-    'idrac-graphical': IdracApp,
-    'ilo-graphical': IloApp,
-    'supermicro-graphical': SupermicroApp,
-}
+def discover_app(app_name, app_info):
+    if app_name == 'fake':
+        return FakeApp
+    if app_name == 'redfish-graphical':
+        # Make an unauthenticated redfish request
+        # to discover which console class to use
+        url = app_info['address'] + app_info.get('root_prefix', '/redfish/v1')
+        verify = app_info.get('verify_ca', True)
+        r = requests.get(url, verify=verify).json()
+        oem = ",".join(r['Oem'].keys())
+        if 'Hpe' in oem:
+            return IloApp
+        if 'Dell' in oem:
+            return IdracApp
+        if 'Supermicro' in oem:
+            return SupermicroApp
+        raise Exception(f'Unsupported {app_name} vendor {oem}')
+
+    raise Exception(f'Unknown app name {app_name}')
+
 
 def main():
     app_name = os.environ.get('APP')
-    app_class = app_classes.get(app_name)
-    if not app_class:
-        raise Exception(f'Unknown app {app_name}')
+    print('got app info ' + os.environ.get('APP_INFO'))
+    app_info = json.loads(os.environ.get('APP_INFO'))
+    app_class = discover_app(app_name, app_info)
 
-    app = app_class()
+    app = app_class(app_info)
 
-    driver = start_driver(url=app.url)
+    driver = start_driver(url=app.url, app_info=app_info)
     print(f'got driver {driver}')
 
     print(f'Running app {app_name}')
